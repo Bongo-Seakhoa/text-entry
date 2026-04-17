@@ -24,6 +24,10 @@ MUTED = "#53657D"
 SUCCESS = "#3C8050"
 WARNING = "#A8432A"
 
+INDICATOR_IDLE = "#3C5070"
+INDICATOR_COUNTDOWN = "#D14B3D"
+INDICATOR_TYPING = SUCCESS
+
 
 @dataclass(slots=True)
 class WorkerState:
@@ -49,6 +53,7 @@ class TypingSimulatorApp:
         self.wpm_var = tk.IntVar(value=65)
         self.delay_var = tk.IntVar(value=4)
         self.humanize_var = tk.BooleanVar(value=True)
+        self.mute_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready. Paste the source text, click Start, and focus the browser field.")
         self.detail_var = tk.StringVar(value="Supports multiline text, punctuation, and Unicode fallback.")
         self.stats_var = tk.StringVar(value="0 characters")
@@ -58,6 +63,7 @@ class TypingSimulatorApp:
         self._build_layout()
         self._bind_events()
         self._refresh_metrics()
+        self._set_indicator(INDICATOR_IDLE, "")
         self._poll_queue()
 
     def _configure_style(self) -> None:
@@ -90,6 +96,7 @@ class TypingSimulatorApp:
         hero = ttk.Frame(self.root, style="Hero.TFrame", padding=(26, 20))
         hero.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 12))
         hero.columnconfigure(0, weight=1)
+        hero.columnconfigure(1, weight=0)
 
         ttk.Label(hero, text="Typing Simulator", style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
@@ -99,6 +106,22 @@ class TypingSimulatorApp:
             wraplength=840,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+
+        self.indicator_canvas = tk.Canvas(
+            hero,
+            width=58,
+            height=58,
+            bg=INK,
+            highlightthickness=0,
+            bd=0,
+        )
+        self.indicator_canvas.grid(row=0, column=1, rowspan=2, sticky="e", padx=(20, 0))
+        self._indicator_oval = self.indicator_canvas.create_oval(
+            3, 3, 55, 55, fill=INDICATOR_IDLE, outline=""
+        )
+        self._indicator_text = self.indicator_canvas.create_text(
+            29, 29, text="", fill="white", font=("Bahnschrift SemiBold", 20)
+        )
 
         container = ttk.Frame(self.root, style="App.TFrame")
         container.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
@@ -208,6 +231,12 @@ class TypingSimulatorApp:
             style="Card.TCheckbutton",
             command=self._refresh_metrics,
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Checkbutton(
+            delay_frame,
+            text="Mute notification sounds",
+            variable=self.mute_var,
+            style="Card.TCheckbutton",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         action_bar = ttk.Frame(controls, style="Card.TFrame")
         action_bar.grid(row=5, column=0, sticky="ew", pady=(4, 0))
@@ -327,6 +356,7 @@ class TypingSimulatorApp:
             self._launch_typing_worker()
             return
 
+        self._set_indicator(INDICATOR_COUNTDOWN, str(self._countdown_remaining))
         self._set_status(
             f"Typing starts in {self._countdown_remaining}s.",
             "Click into the target browser field before the countdown reaches zero.",
@@ -341,6 +371,7 @@ class TypingSimulatorApp:
             return
 
         self._beep("start")
+        self._set_indicator(INDICATOR_TYPING, "")
         self._set_status("Typing in progress.", "Keep the destination field focused. Hold Esc to cancel immediately.")
         self._typing_thread = threading.Thread(
             target=self._typing_worker,
@@ -406,6 +437,11 @@ class TypingSimulatorApp:
         self.stop_button.configure(state="disabled")
         self._typing_thread = None
         self._stop_event.clear()
+        self._set_indicator(INDICATOR_IDLE, "")
+
+    def _set_indicator(self, color: str, label: str) -> None:
+        self.indicator_canvas.itemconfigure(self._indicator_oval, fill=color)
+        self.indicator_canvas.itemconfigure(self._indicator_text, text=label)
 
     def _set_status(self, summary: str, detail: str) -> None:
         self.status_var.set(summary)
@@ -428,7 +464,7 @@ class TypingSimulatorApp:
             return fallback
 
     def _beep(self, kind: str) -> None:
-        if winsound is None:
+        if winsound is None or self.mute_var.get():
             return
 
         sound_type = {

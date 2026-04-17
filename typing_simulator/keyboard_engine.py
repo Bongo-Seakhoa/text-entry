@@ -192,6 +192,9 @@ class KeyboardTyper:
         shift_state = (vk_combo >> 8) & 0xFF
         virtual_key = vk_combo & 0xFF
 
+        # AltGr and dead-key compositions vary across layouts. Falling back to
+        # Unicode packets is less human-like, but it is much more reliable for
+        # reproducing the exact visible character in the target field.
         if shift_state & 0x06:
             return ResolvedKey(char=char, vk=None, use_unicode=True)
 
